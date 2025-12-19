@@ -10,6 +10,8 @@ async function runAgent(userPrompt: string): Promise<string> {
 			cwd: process.cwd(),
 			settingSources: ["project"],
 			tools: { type: "preset", preset: "claude_code" },
+			systemPrompt:
+				"You are a helpful assistant that can search for movies and add them to a Radarr instance.",
 		},
 	});
 
