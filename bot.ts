@@ -30,10 +30,10 @@ bot.on("message:text", async (ctx) => {
 		sessions.set(ctx.chat.id, result.sessionId);
 		const response = result.response || "No response from agent";
 		console.log(`[bot] ${response}`);
-		await ctx.reply(response);
+		await ctx.reply(response, { parse_mode: "Markdown" });
 	} catch (error) {
 		const message = error instanceof Error ? error.message : "Unknown error";
-		await ctx.reply(`Error: ${message}`);
+		await ctx.reply(`Error: ${message}`, { parse_mode: "Markdown" });
 	} finally {
 		clearInterval(typingInterval);
 	}
