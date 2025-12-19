@@ -10,6 +10,9 @@ bun run bot.ts          # Run Telegram bot
 bun run typecheck       # TypeScript type checking
 bun run check           # Biome lint/format check
 bun run check:fix       # Auto-fix lint/format issues
+
+# Deploy to pi5
+rsync -avz --progress . khoi@pi5.local:/home/khoi/thaicongbot/ && ssh khoi@pi5.local 'sudo systemctl restart thaicongbot && sudo systemctl status thaicongbot'
 ```
 
 ## Environment Variables
