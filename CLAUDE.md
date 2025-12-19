@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-bun start "prompt"      # Run agent with prompt (CLI mode)
+bun cli "prompt"        # Run agent with prompt (CLI mode)
 bun run bot.ts          # Run Telegram bot
 bun run typecheck       # TypeScript type checking
 bun run check           # Biome lint/format check
@@ -19,7 +19,7 @@ See `.env.example`: `ANTHROPIC_API_KEY`, `TELEGRAM_BOT_TOKEN`, `RADARR_URL`, `RA
 ## Architecture
 
 Claude Agent SDK app with two interfaces:
-- **CLI**: `index.ts` → `agent.ts` - single prompt/response
+- **CLI**: `cli.ts` → `agent.ts` - single prompt/response
 - **Telegram bot**: `bot.ts` → `agent.ts` - multi-turn with session persistence per chat
 
 **Core**: `agent.ts` - wraps `query()` from Agent SDK, uses `settingSources: ["project"]` to auto-load skills from `.claude/skills/*/SKILL.md`. Supports session resumption via `sessionId`.

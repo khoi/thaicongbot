@@ -13,30 +13,47 @@ export async function runAgent(
 		prompt: userPrompt,
 		options: {
 			model: "claude-sonnet-4-5-20250929",
-			permissionMode: "bypassPermissions",
-			allowDangerouslySkipPermissions: true,
+			permissionMode: "dontAsk",
 			cwd: process.cwd(),
 			settingSources: ["project"],
-			tools: { type: "preset", preset: "claude_code" },
-			systemPrompt: `Bạn là trợ lý tìm và thêm phim/series để tải về. Hãy nhập vai Thái Công - nhà thiết kế nội thất sang trọng, tinh tế, đôi khi hơi "chảnh" nhưng tận tâm.
+			allowedTools: ["Bash", "Read"],
+			canUseTool: async (toolName, input) => {
+				if (toolName === "Read") {
+					const path = (input as { file_path?: string }).file_path ?? "";
+					if (!path.endsWith(".env")) {
+						return { behavior: "deny", message: "Only .env readable" };
+					}
+					return { behavior: "allow", updatedInput: input };
+				}
+				const cmd = (input as { command?: string }).command ?? "";
+				if (!cmd.includes("curl")) {
+					return { behavior: "deny", message: "Only curl allowed" };
+				}
+				return { behavior: "allow", updatedInput: input };
+			},
+			systemPrompt: `Trợ lý tìm/thêm phim-series. Nhập vai Thái Công - designer sang trọng, hơi "chảnh" nhưng tận tâm.
 
 Quy tắc:
-- Luôn trả lời tiếng Việt
-- Tối đa 5 items/lần - từ chối lịch sự nếu vượt quá
-- Nếu prompt mơ hồ hoặc nhiều kết quả: hỏi lại để chọn đúng
-- KHÔNG BAO GIỜ nhắc đến Radarr/Sonarr hay chi tiết kỹ thuật
-- Xưng hô: "Thái Công" và gọi user là "bạn"
-- Đưa ra nhận xét về gu thẩm mỹ (theo phong cách Thái Công)
+- Tiếng Việt, xưng "Thái Công", gọi user "bạn"
+- Tối đa 5 items/lần
+- Nhận prompt = TÌM NGAY, không hỏi ý định. VD: "batman" → search luôn
+- Nhiều kết quả: ĐÁNH SỐ 1,2,3... để user chọn dễ
+- Giấu Radarr/Sonarr, chỉ nói "bộ sưu tập"
+- Comment gu thẩm mỹ kiểu Thái Công
 
-Khi tìm kiếm: LUÔN chạy SONG SONG cả 2 subagent radarr-searcher và sonarr-searcher để tìm cả phim lẫn series cùng lúc, trừ khi user chỉ rõ loại.`,
+Tìm kiếm: LUÔN chạy SONG SONG radarr-searcher + sonarr-searcher, trừ khi user chỉ rõ loại.`,
 			agents: {
 				"radarr-searcher": {
-					description: "Search and add movies via Radarr API. Use for movie searches.",
-					prompt: "Search Radarr for movies. Use the radarr skill workflow. Return results concisely.",
+					description:
+						"Search and add movies via Radarr API. Use for movie searches.",
+					prompt:
+						"Read .env first to get RADARR_URL and RADARR_API_KEY, then search Radarr. Substitute env values directly into curl commands.",
 				},
 				"sonarr-searcher": {
-					description: "Search and add TV series via Sonarr API. Use for TV show searches.",
-					prompt: "Search Sonarr for TV series. Use the sonarr skill workflow. Return results concisely.",
+					description:
+						"Search and add TV series via Sonarr API. Use for TV show searches.",
+					prompt:
+						"Read .env first to get SONARR_URL and SONARR_API_KEY, then search Sonarr. Substitute env values directly into curl commands.",
 				},
 			},
 			...(sessionId && { resume: sessionId }),
