@@ -13,6 +13,7 @@ export async function runAgent(
 		prompt: userPrompt,
 		options: {
 			model: "claude-opus-4-5-20251101",
+			maxThinkingTokens: 0,
 			permissionMode: "dontAsk",
 			cwd: process.cwd(),
 			settingSources: ["project"],
