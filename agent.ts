@@ -1,5 +1,5 @@
-import { ToolLoopAgent, tool, type ModelMessage } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
+import { type ModelMessage, ToolLoopAgent, tool } from "ai";
 import { z } from "zod";
 
 export interface AgentResult {
@@ -7,38 +7,59 @@ export interface AgentResult {
 	messages: ModelMessage[];
 }
 
-const SYSTEM_PROMPT = `Nhập vai Thái Công - "ông hoàng xa xỉ", CHẢNH tối đa, trả lời CỰC NGẮN.
+export interface AgentOptions {
+	onProgress?: ProgressFn;
+}
+
+type ProgressFn = (text: string) => Promise<void> | void;
+
+const SYSTEM_PROMPT = `Bạn là Thái Công, một người giàu có và trịch thượng. Nhiệm vụ của bạn là quản lý kho phim ảnh và series theo yêu cầu của user.
 
 PHONG CÁCH:
-- Xưng "Thái Công" ngôi 3, giọng ban ơn
-- Từ vựng: đẳng cấp, tinh tế, kịch cỡm, quê
-
-Các câu nói phổ biến của Thái Công, dùng khi phù hợp, có thể chế cháo nếu cần thiết 
-- "Kiến thức, kinh nghiệm, trải nghiệm"
-- "Rối mắt thì bịt mắt lại!"
-- "Kịch cỡm lắm" / "Hơi quê"
-- "Gu tinh tế đấy"
-- "Không ai mua được sự lịch thiệp"
-- "Toilet còn cạnh bồn tắm thì làm sao hiểu phong cách sống"
+- Xưng "Thái Công" ngôi thứ ba, giọng ban ơn và trịch thượng.
+- Gọi người dùng là bạn.
+- Hãy đưa ra những lời bông đùa, chế giễu user theo phong cách trịch thượng, khinh người.
 
 QUY TẮC:
-- TRẢ LỜI TỐI ĐA 2-3 CÂU
-- Tối đa 5 items, đánh số 1,2,3...
-- Nhận prompt = TÌM NGAY
-- Gọi là "bộ sưu tập của Thái Công"
+- Gọi kho phim ảnh và series là "bộ sưu tập của Thái Công"
 
-Tìm kiếm: LUÔN chạy SONG SONG radarr_search + sonarr_search.`;
+# Output Format
 
-const agent = new ToolLoopAgent({
-	model: anthropic("claude-sonnet-4-5"),
-	instructions: SYSTEM_PROMPT,
-	tools: {
+- Trả lời ngắn gọn, tối đa 2-3 câu.
+- Khi đưa ra 1 danh sách, luôn đánh số thứ tự để user dễ dàng chọn. (đánh số từ 1 - 10, phim và series chung số)
+`;
+
+export const PROGRESS_MESSAGES = {
+	start: "Thái Công đang xử lý...",
+	done: "Xong. Gu tinh tế.",
+	errorPrefix: "Thái Công gặp lỗi: ",
+	radarrSearch: (query: string) =>
+		`Thái Công đang lục kho tàng phim cho "${query}"...`,
+	radarrAdd: (tmdbId: number) =>
+		`Thái Công đang thêm phim (TMDB ${tmdbId}) vào kho tàng phim...`,
+	sonarrSearch: (query: string) =>
+		`Thái Công đang lục kho tàng series cho "${query}"...`,
+	sonarrAdd: (title: string) =>
+		`Thái Công đang thêm series: "${title}" vào kho tàng series...`,
+};
+
+function createAgent(onProgress?: ProgressFn) {
+	return new ToolLoopAgent({
+		model: anthropic("claude-sonnet-4-5"),
+		instructions: SYSTEM_PROMPT,
+		tools: buildTools(onProgress),
+	});
+}
+
+function buildTools(onProgress?: ProgressFn) {
+	return {
 		radarr_search: tool({
 			description: "Search Radarr for movies by title.",
 			inputSchema: z.object({
 				query: z.string().min(1),
 			}),
 			execute: async ({ query }) => {
+				await reportProgress(onProgress, PROGRESS_MESSAGES.radarrSearch(query));
 				const data = await radarrGet(
 					`/api/v3/movie/lookup?term=${encodeURIComponent(query)}`,
 				);
@@ -66,6 +87,7 @@ const agent = new ToolLoopAgent({
 				monitored = true,
 				searchForMovie = true,
 			}) => {
+				await reportProgress(onProgress, PROGRESS_MESSAGES.radarrAdd(tmdbId));
 				const resolvedQualityProfileId =
 					qualityProfileId ??
 					(await pickQualityProfileIdByName("Any", () =>
@@ -94,6 +116,7 @@ const agent = new ToolLoopAgent({
 				query: z.string().min(1),
 			}),
 			execute: async ({ query }) => {
+				await reportProgress(onProgress, PROGRESS_MESSAGES.sonarrSearch(query));
 				const data = await sonarrGet(
 					`/api/v3/series/lookup?term=${encodeURIComponent(query)}`,
 				);
@@ -125,6 +148,7 @@ const agent = new ToolLoopAgent({
 				seasonFolder = true,
 				searchForMissingEpisodes = true,
 			}) => {
+				await reportProgress(onProgress, PROGRESS_MESSAGES.sonarrAdd(title));
 				const resolvedQualityProfileId =
 					qualityProfileId ??
 					(await pickQualityProfileIdByName("Any", () =>
@@ -149,17 +173,19 @@ const agent = new ToolLoopAgent({
 				});
 			},
 		}),
-	},
-});
+	};
+}
 
 export async function runAgent(
 	userPrompt: string,
 	messages: ModelMessage[] = [],
+	options: AgentOptions = {},
 ): Promise<AgentResult> {
 	const nextMessages: ModelMessage[] = [
 		...messages,
 		{ role: "user", content: userPrompt },
 	];
+	const agent = createAgent(options.onProgress);
 	const result = await agent.generate({ messages: nextMessages });
 	const response = result.text;
 	const updatedMessages: ModelMessage[] = [
@@ -249,6 +275,20 @@ async function sonarrPost(path: string, body: unknown): Promise<unknown> {
 		},
 		body: JSON.stringify(body),
 	});
+}
+
+async function reportProgress(
+	onProgress: ProgressFn | undefined,
+	text: string,
+): Promise<void> {
+	if (!onProgress) {
+		return;
+	}
+	try {
+		await onProgress(text);
+	} catch {
+		// Ignore progress errors to avoid breaking tool execution.
+	}
 }
 
 async function pickQualityProfileIdByName(
