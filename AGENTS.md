@@ -33,3 +33,7 @@ AI SDK 6 app (Anthropic provider) with two interfaces:
 
 - Biome: tabs, double quotes
 - Prefer self-documented code over comments
+
+## Docuementation
+
+- AI SDK https://ai-sdk.dev/llms.txt
