@@ -50,28 +50,6 @@ const agent = new ToolLoopAgent({
 				}));
 			},
 		}),
-		radarr_quality_profiles: tool({
-			description: "List Radarr quality profiles.",
-			inputSchema: z.object({}),
-			execute: async () => {
-				const data = await radarrGet("/api/v3/qualityprofile");
-				return (Array.isArray(data) ? data : []).map((item) => ({
-					id: item.id,
-					name: item.name,
-				}));
-			},
-		}),
-		radarr_root_folders: tool({
-			description: "List Radarr root folders.",
-			inputSchema: z.object({}),
-			execute: async () => {
-				const data = await radarrGet("/api/v3/rootfolder");
-				return (Array.isArray(data) ? data : []).map((item) => ({
-					id: item.id,
-					path: item.path,
-				}));
-			},
-		}),
 		radarr_add_movie: tool({
 			description: "Add a movie to Radarr by TMDB id.",
 			inputSchema: z.object({
@@ -90,7 +68,7 @@ const agent = new ToolLoopAgent({
 			}) => {
 				const resolvedQualityProfileId =
 					qualityProfileId ??
-					(await pickFirstQualityProfileId(() =>
+					(await pickQualityProfileIdByName("Any", () =>
 						radarrGet("/api/v3/qualityprofile"),
 					));
 				const resolvedRootFolderPath =
@@ -127,28 +105,6 @@ const agent = new ToolLoopAgent({
 				}));
 			},
 		}),
-		sonarr_quality_profiles: tool({
-			description: "List Sonarr quality profiles.",
-			inputSchema: z.object({}),
-			execute: async () => {
-				const data = await sonarrGet("/api/v3/qualityprofile");
-				return (Array.isArray(data) ? data : []).map((item) => ({
-					id: item.id,
-					name: item.name,
-				}));
-			},
-		}),
-		sonarr_root_folders: tool({
-			description: "List Sonarr root folders.",
-			inputSchema: z.object({}),
-			execute: async () => {
-				const data = await sonarrGet("/api/v3/rootfolder");
-				return (Array.isArray(data) ? data : []).map((item) => ({
-					id: item.id,
-					path: item.path,
-				}));
-			},
-		}),
 		sonarr_add_series: tool({
 			description: "Add a TV series to Sonarr by TVDB id.",
 			inputSchema: z.object({
@@ -171,7 +127,7 @@ const agent = new ToolLoopAgent({
 			}) => {
 				const resolvedQualityProfileId =
 					qualityProfileId ??
-					(await pickFirstQualityProfileId(() =>
+					(await pickQualityProfileIdByName("Any", () =>
 						sonarrGet("/api/v3/qualityprofile"),
 					));
 				const resolvedRootFolderPath =
@@ -295,18 +251,21 @@ async function sonarrPost(path: string, body: unknown): Promise<unknown> {
 	});
 }
 
-async function pickFirstQualityProfileId(
+async function pickQualityProfileIdByName(
+	name: string,
 	fetcher: () => Promise<unknown>,
 ): Promise<number> {
 	const data = await fetcher();
 	if (!Array.isArray(data) || data.length === 0) {
 		throw new Error("No quality profiles available");
 	}
-	const first = data[0] as { id?: number };
-	if (typeof first.id !== "number") {
-		throw new Error("Quality profile id missing");
+	const match = (data as { id?: number; name?: string }[]).find(
+		(entry) => entry.name?.toLowerCase() === name.toLowerCase(),
+	);
+	if (!match || typeof match.id !== "number") {
+		throw new Error(`Quality profile "${name}" not found`);
 	}
-	return first.id;
+	return match.id;
 }
 
 async function pickFirstRootFolderPath(
