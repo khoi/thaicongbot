@@ -54,7 +54,8 @@ function createAgent(onProgress?: ProgressFn) {
 function buildTools(onProgress?: ProgressFn) {
 	return {
 		radarr_search: tool({
-			description: "Search Radarr for movies by title.",
+			description:
+				"Search Radarr for movies by title (accepts a movie title, not a generic keyword).",
 			inputSchema: z.object({
 				query: z.string().min(1),
 			}),
@@ -111,7 +112,8 @@ function buildTools(onProgress?: ProgressFn) {
 			},
 		}),
 		sonarr_search: tool({
-			description: "Search Sonarr for TV series by title.",
+			description:
+				"Search Sonarr for TV series by title (accepts a series title, not a generic keyword).",
 			inputSchema: z.object({
 				query: z.string().min(1),
 			}),
