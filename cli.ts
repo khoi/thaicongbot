@@ -1,4 +1,5 @@
 import * as readline from "node:readline";
+import { type ModelMessage } from "ai";
 import { runAgent } from "./agent.ts";
 
 const rl = readline.createInterface({
@@ -6,11 +7,11 @@ const rl = readline.createInterface({
 	output: process.stdout,
 });
 
-let sessionId: string | undefined;
+let messages: ModelMessage[] = [];
 
 async function handleInput(prompt: string) {
 	if (prompt === "/new") {
-		sessionId = undefined;
+		messages = [];
 		console.log("Session cleared.");
 		return;
 	}
@@ -20,8 +21,8 @@ async function handleInput(prompt: string) {
 	}
 
 	console.log("---");
-	const result = await runAgent(prompt, sessionId);
-	sessionId = result.sessionId;
+	const result = await runAgent(prompt, messages);
+	messages = result.messages;
 	console.log("Agent:", result.response);
 }
 

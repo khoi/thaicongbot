@@ -1,8 +1,9 @@
 import { Bot } from "grammy";
+import { type ModelMessage } from "ai";
 import { runAgent } from "./agent.ts";
 
 const bot = new Bot(process.env.TELEGRAM_BOT_TOKEN ?? "");
-const sessions = new Map<number, string>();
+const sessions = new Map<number, ModelMessage[]>();
 
 bot.command("start", (ctx) => ctx.reply("Welcome! Up and running."));
 
@@ -25,9 +26,9 @@ bot.on("message:text", async (ctx) => {
 	await ctx.replyWithChatAction("typing");
 
 	try {
-		const sessionId = sessions.get(ctx.chat.id);
-		const result = await runAgent(ctx.message.text, sessionId);
-		sessions.set(ctx.chat.id, result.sessionId);
+		const messages = sessions.get(ctx.chat.id) ?? [];
+		const result = await runAgent(ctx.message.text, messages);
+		sessions.set(ctx.chat.id, result.messages);
 		const response = result.response || "No response from agent";
 		console.log(`[bot] ${response}`);
 		await ctx.reply(response, { parse_mode: "Markdown" });
