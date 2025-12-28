@@ -7,17 +7,26 @@ export interface AgentResult {
 	messages: ModelMessage[];
 }
 
+export interface AgentUserContext {
+	id?: number;
+	firstName?: string;
+	lastName?: string;
+	username?: string;
+	displayName?: string;
+}
+
 export interface AgentOptions {
 	onProgress?: ProgressFn;
+	user?: AgentUserContext;
 }
 
 type ProgressFn = (text: string) => Promise<void> | void;
 
-const SYSTEM_PROMPT = `Bạn là Thái Công, một người giàu có và trịch thượng. Nhiệm vụ của bạn là quản lý kho phim ảnh và series theo yêu cầu của user.
+const BASE_SYSTEM_PROMPT = `Bạn là Thái Công, một người giàu có và trịch thượng. Nhiệm vụ của bạn là quản lý kho phim ảnh và series theo yêu cầu của user.
 
 PHONG CÁCH:
 - Xưng "Thái Công" ngôi thứ ba, giọng ban ơn và trịch thượng.
-- Gọi người dùng là bạn.
+- Gọi người dùng là bạn, trừ khi có tên hiển thị/username.
 - Hãy đưa ra những lời bông đùa, chế giễu user theo phong cách trịch thượng, khinh người.
 
 QUY TẮC:
@@ -28,6 +37,26 @@ QUY TẮC:
 - Trả lời ngắn gọn, tối đa 2-3 câu.
 - Khi đưa ra 1 danh sách, luôn đánh số thứ tự để user dễ dàng chọn. (đánh số từ 1 - 10, phim và series chung số)
 `;
+
+function buildSystemPrompt(user?: AgentUserContext) {
+	const fallbackName = [user?.firstName, user?.lastName]
+		.filter(Boolean)
+		.join(" ")
+		.trim();
+	const name = user?.displayName || fallbackName || user?.username;
+	if (!name) {
+		return BASE_SYSTEM_PROMPT;
+	}
+	return `${BASE_SYSTEM_PROMPT}
+
+THÔNG TIN NGƯỜI DÙNG:
+- Tên hiển thị: ${name}${user?.username ? ` (username: ${user.username})` : ""}
+
+QUY TẮC BỔ SUNG:
+- Nếu có tên hiển thị hoặc username, hãy gọi người dùng bằng tên đó thay vì "bạn".
+- Nếu tên không có dấu, thay vì dùng tên đó, hãy đoán tên tiếng Việt của họ. (ví dụ tên là khoi thì dùng Khôi, thuan  thì dùng Thuận)
+`;
+}
 
 export const PROGRESS_MESSAGES = {
 	start: "Thái Công đang xử lý...",
@@ -43,10 +72,10 @@ export const PROGRESS_MESSAGES = {
 		`Thái Công đang thêm series: "${title}" vào kho tàng series...`,
 };
 
-function createAgent(onProgress?: ProgressFn) {
+function createAgent(onProgress?: ProgressFn, user?: AgentUserContext) {
 	return new ToolLoopAgent({
 		model: anthropic("claude-sonnet-4-5"),
-		instructions: SYSTEM_PROMPT,
+		instructions: buildSystemPrompt(user),
 		tools: buildTools(onProgress),
 	});
 }
@@ -187,7 +216,7 @@ export async function runAgent(
 		...messages,
 		{ role: "user", content: userPrompt },
 	];
-	const agent = createAgent(options.onProgress);
+	const agent = createAgent(options.onProgress, options.user);
 	const result = await agent.generate({ messages: nextMessages });
 	const response = result.text;
 	const updatedMessages: ModelMessage[] = [

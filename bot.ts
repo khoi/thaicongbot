@@ -19,6 +19,19 @@ bot.api.setMyCommands([
 
 bot.on("message:text", async (ctx) => {
 	console.log(`[${ctx.from?.username ?? ctx.from?.id}] ${ctx.message.text}`);
+	const displayName = [ctx.from?.first_name, ctx.from?.last_name]
+		.filter(Boolean)
+		.join(" ")
+		.trim();
+	const userContext = ctx.from
+		? {
+				id: ctx.from.id,
+				firstName: ctx.from.first_name,
+				lastName: ctx.from.last_name,
+				username: ctx.from.username,
+				displayName: displayName || ctx.from.username,
+			}
+		: undefined;
 
 	const typingInterval = setInterval(() => {
 		ctx.replyWithChatAction("typing");
@@ -63,6 +76,7 @@ bot.on("message:text", async (ctx) => {
 		const messages = sessions.get(ctx.chat.id) ?? [];
 		const result = await runAgent(ctx.message.text, messages, {
 			onProgress: updateProgress,
+			user: userContext,
 		});
 		sessions.set(ctx.chat.id, result.messages);
 		const response = result.response || "No response from agent";
