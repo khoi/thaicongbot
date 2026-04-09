@@ -81,11 +81,11 @@ bot.on("message:text", async (ctx) => {
 		sessions.set(ctx.chat.id, result.messages);
 		const response = result.response || "No response from agent";
 		console.log(`[bot] ${response}`);
-		await ctx.reply(response, { parse_mode: "Markdown" });
+		await ctx.reply(response);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : "Unknown error";
 		await updateProgress(`${PROGRESS_MESSAGES.errorPrefix}${message}`);
-		await ctx.reply(`Error: ${message}`, { parse_mode: "Markdown" });
+		await ctx.reply(`Error: ${message}`);
 	} finally {
 		clearInterval(typingInterval);
 		await clearProgress();
