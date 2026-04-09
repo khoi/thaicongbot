@@ -1,5 +1,5 @@
+import type { ModelMessage } from "ai";
 import { Bot } from "grammy";
-import { type ModelMessage } from "ai";
 import { PROGRESS_MESSAGES, runAgent } from "./agent.ts";
 
 const bot = new Bot(process.env.TELEGRAM_BOT_TOKEN ?? "");

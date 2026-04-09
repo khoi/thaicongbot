@@ -21,6 +21,7 @@ export interface AgentOptions {
 }
 
 type ProgressFn = (text: string) => Promise<void> | void;
+type LookupRecord = Record<string, unknown>;
 
 const BASE_SYSTEM_PROMPT = `You are Thái Công, a wealthy and arrogant curator who manages a film and series library at the user's request.
 
@@ -115,6 +116,7 @@ function buildTools(onProgress?: ProgressFn) {
 					title: item.title,
 					year: item.year,
 					tmdbId: item.tmdbId,
+					alreadyAdded: isRadarrMovieInLibrary(item),
 					overview: item.overview?.slice(0, 120) ?? "",
 				}));
 			},
@@ -136,6 +138,12 @@ function buildTools(onProgress?: ProgressFn) {
 				searchForMovie = true,
 			}) => {
 				await reportProgress(onProgress, PROGRESS_MESSAGES.radarrAdd(tmdbId));
+				const movie = await radarrLookupMovieByTmdbId(tmdbId);
+				if (isRadarrMovieInLibrary(movie)) {
+					throw new Error(
+						`${getLookupTitle(movie, `Movie ${tmdbId}`)} is already in Radarr`,
+					);
+				}
 				const resolvedQualityProfileId =
 					qualityProfileId ??
 					(await pickQualityProfileIdByName("Any", () =>
@@ -148,7 +156,7 @@ function buildTools(onProgress?: ProgressFn) {
 					));
 
 				return radarrPost("/api/v3/movie", {
-					tmdbId,
+					...movie,
 					qualityProfileId: resolvedQualityProfileId,
 					rootFolderPath: resolvedRootFolderPath,
 					monitored,
@@ -173,6 +181,7 @@ function buildTools(onProgress?: ProgressFn) {
 					title: item.title,
 					year: item.year,
 					tvdbId: item.tvdbId,
+					alreadyAdded: isSonarrSeriesInLibrary(item),
 					overview: item.overview?.slice(0, 120) ?? "",
 				}));
 			},
@@ -198,6 +207,12 @@ function buildTools(onProgress?: ProgressFn) {
 				searchForMissingEpisodes = true,
 			}) => {
 				await reportProgress(onProgress, PROGRESS_MESSAGES.sonarrAdd(title));
+				const series = await sonarrLookupSeriesByTvdbId(tvdbId);
+				if (isSonarrSeriesInLibrary(series)) {
+					throw new Error(
+						`${getLookupTitle(series, title)} is already in Sonarr`,
+					);
+				}
 				const resolvedQualityProfileId =
 					qualityProfileId ??
 					(await pickQualityProfileIdByName("Any", () =>
@@ -208,17 +223,24 @@ function buildTools(onProgress?: ProgressFn) {
 					(await pickFirstRootFolderPath(() =>
 						sonarrGet("/api/v3/rootfolder"),
 					));
+				const languageProfileId = await pickOptionalFirstId(() =>
+					sonarrGet("/api/v3/languageprofile"),
+				);
 
 				return sonarrPost("/api/v3/series", {
-					tvdbId,
-					title,
+					...series,
 					qualityProfileId: resolvedQualityProfileId,
 					rootFolderPath: resolvedRootFolderPath,
 					monitored,
 					seasonFolder,
 					addOptions: {
+						monitor: "all",
 						searchForMissingEpisodes,
+						searchForCutoffUnmetEpisodes: false,
 					},
+					...(typeof languageProfileId === "number"
+						? { languageProfileId }
+						: {}),
 				});
 			},
 		}),
@@ -351,10 +373,14 @@ async function pickQualityProfileIdByName(
 	const match = (data as { id?: number; name?: string }[]).find(
 		(entry) => entry.name?.toLowerCase() === name.toLowerCase(),
 	);
-	if (!match || typeof match.id !== "number") {
-		throw new Error(`Quality profile "${name}" not found`);
+	if (match && typeof match.id === "number") {
+		return match.id;
 	}
-	return match.id;
+	const fallback = data[0] as { id?: number };
+	if (typeof fallback.id !== "number") {
+		throw new Error("Quality profile id missing");
+	}
+	return fallback.id;
 }
 
 async function pickFirstRootFolderPath(
@@ -372,4 +398,90 @@ async function pickFirstRootFolderPath(
 		throw new Error("Root folder path missing");
 	}
 	return target.path;
+}
+
+async function pickOptionalFirstId(
+	fetcher: () => Promise<unknown>,
+): Promise<number | undefined> {
+	try {
+		const data = await fetcher();
+		if (!Array.isArray(data) || data.length === 0) {
+			return undefined;
+		}
+		const target = data[0] as { id?: number };
+		return typeof target.id === "number" ? target.id : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+async function radarrLookupMovieByTmdbId(
+	tmdbId: number,
+): Promise<LookupRecord> {
+	return asLookupRecord(
+		await radarrGet(`/api/v3/movie/lookup/tmdb?tmdbId=${tmdbId}`),
+		`Movie ${tmdbId}`,
+	);
+}
+
+async function sonarrLookupSeriesByTvdbId(
+	tvdbId: number,
+): Promise<LookupRecord> {
+	const data = await sonarrGet(
+		`/api/v3/series/lookup?term=${encodeURIComponent(`tvdb:${tvdbId}`)}`,
+	);
+	if (!Array.isArray(data) || data.length === 0) {
+		throw new Error(`Series ${tvdbId} not found`);
+	}
+	const match =
+		data.find(
+			(entry) =>
+				entry &&
+				typeof entry === "object" &&
+				"tvdbId" in entry &&
+				entry.tvdbId === tvdbId,
+		) ?? data[0];
+	return asLookupRecord(match, `Series ${tvdbId}`);
+}
+
+function asLookupRecord(value: unknown, label: string): LookupRecord {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		throw new Error(`${label} lookup failed`);
+	}
+	return value as LookupRecord;
+}
+
+function getLookupNumber(
+	resource: LookupRecord,
+	key: string,
+): number | undefined {
+	const value = resource[key];
+	return typeof value === "number" ? value : undefined;
+}
+
+function getLookupTitle(resource: LookupRecord, fallback: string): string {
+	const value = resource.title;
+	return typeof value === "string" && value.length > 0 ? value : fallback;
+}
+
+function hasAddedTimestamp(value: unknown): boolean {
+	return (
+		typeof value === "string" &&
+		value.length > 0 &&
+		value !== "0001-01-01T00:00:00Z"
+	);
+}
+
+function isRadarrMovieInLibrary(movie: LookupRecord): boolean {
+	return (
+		hasAddedTimestamp(movie.added) ||
+		(getLookupNumber(movie, "id") ?? 0) > 0 ||
+		(getLookupNumber(movie, "movieFileId") ?? 0) > 0
+	);
+}
+
+function isSonarrSeriesInLibrary(series: LookupRecord): boolean {
+	return (
+		hasAddedTimestamp(series.added) || (getLookupNumber(series, "id") ?? 0) > 0
+	);
 }

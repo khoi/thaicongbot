@@ -1,5 +1,5 @@
 import * as readline from "node:readline";
-import { type ModelMessage } from "ai";
+import type { ModelMessage } from "ai";
 import { runAgent } from "./agent.ts";
 
 const rl = readline.createInterface({
